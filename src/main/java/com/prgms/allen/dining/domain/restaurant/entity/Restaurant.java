@@ -1,10 +1,11 @@
 package com.prgms.allen.dining.domain.restaurant.entity;
 
-import java.time.LocalDateTime;
 import java.text.MessageFormat;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -12,6 +13,7 @@ import java.util.stream.Stream;
 import javax.persistence.CollectionTable;
 import javax.persistence.Column;
 import javax.persistence.ElementCollection;
+import javax.persistence.Embedded;
 import javax.persistence.Entity;
 import javax.persistence.EnumType;
 import javax.persistence.Enumerated;
@@ -50,11 +52,8 @@ public class Restaurant {
 	@Column(name = "capacity", nullable = false)
 	private int capacity;
 
-	@Column(name = "open_time", nullable = false)
-	private LocalTime openTime;
-
-	@Column(name = "last_order_time", nullable = false)
-	private LocalTime lastOrderTime;
+	@Embedded
+	private BusinessHours businessHours;
 
 	@Column(name = "location", nullable = false)
 	private String location;
@@ -77,42 +76,32 @@ public class Restaurant {
 	protected Restaurant() {
 	}
 
-	public Restaurant(Member owner, FoodType foodType, String name, int capacity, LocalTime openTime,
-		LocalTime lastOrderTime, String location, String description, String phone) {
-		validate(owner, name, capacity, phone, openTime, lastOrderTime, location);
-		this.owner = owner;
-		this.foodType = foodType;
-		this.name = name;
-		this.capacity = capacity;
-		this.openTime = openTime;
-		this.lastOrderTime = lastOrderTime;
-		this.location = location;
-		this.description = description;
-		this.phone = phone;
+	public Restaurant(Member owner, FoodType foodType, String name, int capacity, BusinessHours businessHours,
+		String location, String description, String phone) {
+		this(null, owner, foodType, name, capacity, businessHours, location, description, phone,
+			Collections.EMPTY_LIST, Collections.EMPTY_LIST);
 	}
 
-	public Restaurant(Member owner, FoodType foodType, String name, int capacity, LocalTime openTime,
-		LocalTime lastOrderTime, String location, String description, String phone, List<Menu> menuList,
+	public Restaurant(Member owner, FoodType foodType, String name, int capacity, BusinessHours businessHours,
+		String location, String description, String phone, List<Menu> menuList,
 		List<ClosingDay> closingDays) {
-		this(null, owner, foodType, name, capacity, openTime, lastOrderTime, location, description, phone,
+		this(null, owner, foodType, name, capacity, businessHours, location, description, phone,
 			menuList, closingDays);
 	}
 
-	public Restaurant(Long id, Member owner, FoodType foodType, String name, int capacity, LocalTime openTime,
-		LocalTime lastOrderTime, String location, String description, String phone, List<Menu> menuList,
-		List<ClosingDay> closingDays) {
-		validate(owner, name, capacity, phone, openTime, lastOrderTime, location);
+	public Restaurant(Long id, Member owner, FoodType foodType, String name, int capacity, BusinessHours businessHours,
+		String location, String description, String phone, List<Menu> menu, List<ClosingDay> closingDays) {
+		validate(owner, name, capacity, phone, businessHours, location);
 		this.id = id;
 		this.owner = owner;
 		this.foodType = foodType;
 		this.name = name;
 		this.capacity = capacity;
-		this.openTime = openTime;
-		this.lastOrderTime = lastOrderTime;
+		this.businessHours = businessHours;
 		this.location = location;
 		this.description = description;
 		this.phone = phone;
-		this.menu = menuList;
+		this.menu = menu;
 		this.closingDays = closingDays;
 	}
 
@@ -136,14 +125,6 @@ public class Restaurant {
 		return capacity;
 	}
 
-	public LocalTime getOpenTime() {
-		return openTime;
-	}
-
-	public LocalTime getLastOrderTime() {
-		return lastOrderTime;
-	}
-
 	public String getLocation() {
 		return location;
 	}
@@ -164,6 +145,10 @@ public class Restaurant {
 		return List.copyOf(closingDays);
 	}
 
+	public BusinessHours getBusinessHours() {
+		return businessHours;
+	}
+
 	public List<Menu> getMinorMenu() {
 		if (menu.size() < 5) {
 			return this.getMenu();
@@ -176,7 +161,8 @@ public class Restaurant {
 	}
 
 	public boolean isNotReserveAvailableForDay(long totalCount) {
-		long availableTotalCapacity = (long)(this.lastOrderTime.getHour() - this.openTime.getHour() + 1) * capacity;
+		long availableTotalCapacity =
+			(long)(businessHours.getLastOrderTime().getHour() - businessHours.getOpenTime().getHour() + 1) * capacity;
 		return availableTotalCapacity - totalCount < 2;
 	}
 
@@ -186,13 +172,13 @@ public class Restaurant {
 			.anyMatch(dayOfWeek -> dayOfWeek.equals(requestDate.getDayOfWeek()));
 	}
 
-	public void validate(Member owner, String name, int capacity, String phone, LocalTime openTime,
-		LocalTime lastOrderTime, String location) {
+	public void validate(Member owner, String name, int capacity, String phone, BusinessHours businessHours,
+		String location) {
 		validateOwnerType(owner);
 		validateName(name);
 		validateCapacity(capacity);
 		validatePhone(phone);
-		validateTimes(openTime, lastOrderTime);
+		validateTimes(businessHours);
 		validateLocation(location);
 	}
 
@@ -217,9 +203,9 @@ public class Restaurant {
 		Assert.isTrue(Pattern.matches("^[0-9]+$", phone), "Phone is invalid format");
 	}
 
-	private void validateTimes(LocalTime openTime, LocalTime lastOrderTime) {
-		Assert.notNull(openTime, "openTime must not be empty");
-		Assert.notNull(lastOrderTime, "lastOrderTime must not by empty");
+	private void validateTimes(BusinessHours businessHours) {
+		Assert.notNull(businessHours.getOpenTime(), "openTime must not be empty");
+		Assert.notNull(businessHours.getLastOrderTime(), "lastOrderTime must not by empty");
 	}
 
 	private void validateLocation(String location) {
@@ -236,22 +222,23 @@ public class Restaurant {
 	}
 
 	private boolean isAfterOrEqualOpenTime(LocalTime visitTime) {
-		return visitTime.compareTo(openTime) >= 0;
+		return visitTime.compareTo(businessHours.getOpenTime()) >= 0;
 	}
 
 	private boolean isBeforeOrEqualLastOrderTime(LocalTime visitTime) {
-		return visitTime.compareTo(lastOrderTime) <= 0;
+		return visitTime.compareTo(businessHours.getLastOrderTime()) <= 0;
 	}
 
 	public List<LocalTime> generateTimeTable() {
-		return Stream.iterate(openTime,
+		return Stream.iterate(businessHours.getOpenTime(),
 				time -> time.plusSeconds(ReservationPolicy.UNIT_SECONDS)
 			).limit(getRunningTime())
 			.toList();
 	}
 
 	private int getRunningTime() {
-		return lastOrderTime.minusHours(openTime.getHour())
+		return businessHours.getLastOrderTime()
+			.minusHours(businessHours.getOpenTime().getHour())
 			.getHour() + 1;
 	}
 }
